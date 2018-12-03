@@ -6,13 +6,14 @@ use Illuminate\Http\Request;
 use App\Http\Requests;
 use App\Models\User;
 use Auth;
+use Mail;
 
 class UserController extends Controller
 {
 	public function __construct()
 	{
 		$this->middleware('auth', [
-			'except' => ['show', 'create', 'store', 'index']
+			'except' => ['show', 'create', 'store', 'index', 'confirmEmail']
 		]);
 
 		$this->middleware('guest', [
@@ -59,11 +60,43 @@ class UserController extends Controller
             'password' => bcrypt($request->password),
     	]);
 
-    	Auth::login($user);
-
-    	session()->flash('success', '欢迎，您将在这里开启一段新的旅程~');
-    	return redirect()->route('users.show', [$user]);
+    	$this->sendEmailConfirmationTo($user);
+        session()->flash('success', '验证邮件已发送到你的注册邮箱上，请注意查收。');
+        return redirect('/');
     }
+
+    public function sendEmailConfirmationTo($user)
+    {
+    	$view = 'emails.confirm';
+        $data = compact('user');
+        $to = $user->email;
+        $subject = "感谢注册 Ruchangheng’s 应用！请确认你的邮箱。";
+
+        Mail::send($view, $data, function ($message) use ($to, $subject) {
+            $message->to($to)->subject($subject);
+        });
+    }
+
+    public function confirmEmail($id, $token)
+	{
+	    $user = User::find($id); //根据id找到用户
+
+	    // 匹配 token ，确认激活，更新数据
+	    if($user->activation_token == $token) { 
+	        $user->activated = true;
+	        $user->activation_token = null;
+	        $user->save();
+
+	        // 自动登陆，发送提示，重定向
+	        Auth::login($user);
+	        session()->flash('success', '恭喜你，激活成功！');
+	        return redirect()->route('users.show', [$user]);
+	    } else {
+	        session()->flash('danger', '激活失败。请再次点击邮件中的链接重试');
+	        return redirect('/');
+	    }
+
+	}
 
     public function edit(User $user)
     {
